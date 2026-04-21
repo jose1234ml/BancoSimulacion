@@ -1,0 +1,174 @@
+﻿@page "/simulacion-vivo"
+@using BancoSimulacion.Models
+@using BancoSimulacion.Services
+@using System.Globalization
+@using System.Threading
+@inject BankSimulationService SimService
+@rendermode InteractiveServer
+
+<div class="container py-4">
+    <div class="card shadow-sm border-0 bg-dark text-white mb-4">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="fw-bold mb-0"> Monitor en Tiempo Real (5 Cajeros)</h2>
+                <small class="text-info">Estado de la sucursal minuto a minuto</small>
+            </div>
+            <div class="text-end">
+                <h4 class="mb-0">Minuto: @minutoActual / @tiempoSim</h4>
+                <div class="progress mt-2" style="height: 10px; width: 250px; background-color: #444;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+                         style="width: @( (minutoActual * 100) / tiempoSim )%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-0 bg-light">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Configuración fija:</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-primary text-white border-0">5</span>
+                        <input type="text" class="form-control" value="Cajeros Operativos" readonly />
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Velocidad:</label>
+                    <select @bind="velocidadMs" class="form-select border-0 shadow-sm" disabled="@estaSimulando">
+                        <option value="500"> Lento (0.5s)</option>
+                        <option value="100"> Normal (0.1s)</option>
+                        <option value="20"> Rápido</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex gap-2">
+                    @if (!estaSimulando)
+                    {
+                        <button class="btn btn-success w-100 fw-bold py-2" @onclick="IniciarSimulacionAsync">▶ INICIAR</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-danger w-100 fw-bold py-2" @onclick="Detener">⏹ DETENER</button>
+                    }
+                    <NavLink class="btn btn-outline-secondary py-2" href="/">VOLVER</NavLink>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-primary text-white text-center p-3 h-100">
+                <h6 class="small fw-bold">EN FILA</h6>
+                <h2 class="display-5 fw-bold">@colaActual</h2>
+                <small>Capacidad: 10</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-success text-white text-center p-3 h-100">
+                <h6 class="small fw-bold">ATENDIDOS</h6>
+                <h2 class="display-5 fw-bold">@atendidos</h2>
+                <small>Total jornada</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-danger text-white text-center p-3 h-100">
+                <h6 class="small fw-bold">RECHAZADOS</h6>
+                <h2 class="display-5 fw-bold">@rechazados</h2>
+                <small>Perdidos</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm bg-warning text-dark text-center p-3 h-100">
+                <h6 class="small fw-bold">ESPERA PROM.</h6>
+                <h2 class="display-5 fw-bold">@esperaPromedio.ToString("N2")</h2>
+                <small>Minutos</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <svg width="100%" height="300" viewBox="0 0 800 300" style="background-color: #f8f9fa;">
+                @for (int i = 0; i <= 5; i++)
+                {
+                    var yPos = 250 - (i * 40);
+                    <line x1="50" y1="@yPos" x2="750" y2="@yPos" stroke="#ddd" />
+                    @((MarkupString)$@"<text x=""20"" y=""{yPos + 5}"" font-size=""12"" fill=""#999"">{i * 2}</text>")
+                }
+
+                <line x1="50" y1="20" x2="50" y2="250" stroke="#444" stroke-width="2" />
+                <line x1="50" y1="250" x2="750" y2="250" stroke="#444" stroke-width="2" />
+
+                @if (historicoVivo.Count > 1)
+                {
+                    double stepX = 700.0 / tiempoSim;
+                    var puntos = string.Join(" ", historicoVivo.Select(p =>
+                    $"{(50 + p.Minuto * stepX).ToString("F1", CultureInfo.InvariantCulture)},{(250 - p.LongitudCola * 20).ToString("F1", CultureInfo.InvariantCulture)}"));
+
+                    <polyline points="@puntos" fill="none" stroke="#0d6efd" stroke-width="3" stroke-linejoin="round" />
+
+                    var ultimo = historicoVivo.Last();
+                    <circle cx="@((50 + ultimo.Minuto * stepX).ToString("F1", CultureInfo.InvariantCulture))"
+                            cy="@((250 - ultimo.LongitudCola * 20).ToString("F1", CultureInfo.InvariantCulture))"
+                            r="6" fill="red" />
+                }
+
+                @((MarkupString)"<text x=\"400\" y=\"285\" font-size=\"14\" text-anchor=\"middle\" font-weight=\"bold\">Tiempo (Minutos)</text>")
+            </svg>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int cajeros = 5;
+    private int tiempoSim = 480;
+    private int velocidadMs = 100;
+
+    private int minutoActual = 0;
+    private int colaActual = 0;
+    private int atendidos = 0;
+    private int rechazados = 0;
+    private double esperaPromedio = 0;
+    private bool estaSimulando = false;
+
+    private List<PuntoHistorico> historicoVivo = new();
+    private CancellationTokenSource cts;
+
+    private async Task IniciarSimulacionAsync()
+    {
+        estaSimulando = true;
+        minutoActual = 0;
+        historicoVivo.Clear();
+        cts = new CancellationTokenSource();
+
+        try
+        {
+            for (int m = 1; m <= tiempoSim; m++)
+            {
+                if (cts.Token.IsCancellationRequested) break;
+                minutoActual = m;
+
+                var resultado = SimService.EjecutarSimulacion(cajeros, 2.0, 5.0, minutoActual);
+
+                colaActual = resultado.Historico.LastOrDefault()?.LongitudCola ?? 0;
+                atendidos = resultado.ClientesAtendidos;
+                rechazados = resultado.ClientesRechazados;
+                esperaPromedio = resultado.TiempoEsperaPromedio;
+
+                historicoVivo.Add(new PuntoHistorico { Minuto = m, LongitudCola = colaActual });
+
+                StateHasChanged();
+                await Task.Delay(velocidadMs, cts.Token);
+            }
+        }
+        catch (TaskCanceledException) { }
+        finally
+        {
+            estaSimulando = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Detener() => cts?.Cancel();
+}
