@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿
 using BancoSimulacion.Models;
 
 namespace BancoSimulacion.Services
@@ -71,4 +69,5 @@ namespace BancoSimulacion.Services
             return reporte;
         }
     }
+
 }
